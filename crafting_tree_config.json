@@ -2,6 +2,10 @@
   "recipe_yields": {
     "assemble_dynamite": 3.0,
     "smelt_a_tarsilium_bar": 2.0,
-    "fletch_tarsilium_arrows": 2.0
-  }
+    "fletch_tarsilium_arrows": 2.59
+  },
+  "favorites": [
+    "fletch_tarsilium_arrows",
+    "craft_a_hydrilium_sickle"
+  ]
 }

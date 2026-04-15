@@ -28,19 +28,42 @@ def _owned_qty(item_id: str, user: UserData) -> int:
 _CRAFTING_CONFIG_PATH = "crafting_tree_config.json"
 
 
-def load_crafting_config() -> Dict[str, float]:
-    """Return {recipe_id: effective_yield} overrides from disk."""
+def _load_raw_config() -> dict:
+    """Read the full crafting config dict from disk."""
     if os.path.exists(_CRAFTING_CONFIG_PATH):
         with open(_CRAFTING_CONFIG_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return {k: float(v) for k, v in data.get("recipe_yields", {}).items()}
+            return json.load(f)
     return {}
 
 
-def save_crafting_config(yield_config: Dict[str, float]) -> None:
-    """Persist per-recipe yield overrides to disk."""
+def _save_raw_config(data: dict) -> None:
+    """Write the full crafting config dict to disk."""
     with open(_CRAFTING_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump({"recipe_yields": yield_config}, f, indent=2)
+        json.dump(data, f, indent=2)
+
+
+def load_crafting_config() -> Dict[str, float]:
+    """Return {recipe_id: effective_yield} overrides from disk."""
+    return {k: float(v) for k, v in _load_raw_config().get("recipe_yields", {}).items()}
+
+
+def save_crafting_config(yield_config: Dict[str, float]) -> None:
+    """Persist per-recipe yield overrides to disk without touching other config keys."""
+    data = _load_raw_config()
+    data["recipe_yields"] = yield_config
+    _save_raw_config(data)
+
+
+def load_favorites() -> List[str]:
+    """Return the ordered list of favourite recipe IDs."""
+    return list(_load_raw_config().get("favorites", []))
+
+
+def save_favorites(favorites: List[str]) -> None:
+    """Persist favourite recipe IDs to disk without touching other config keys."""
+    data = _load_raw_config()
+    data["favorites"] = favorites
+    _save_raw_config(data)
 
 
 def _fine_variant(item_id: str, registry: ItemRegistry) -> Optional[str]:
@@ -339,6 +362,60 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
     recipe_labels = [r["name"] for r in recipe_options]
     recipe_ids = [r["id"] for r in recipe_options]
 
+    favorites = load_favorites()
+
+    # Default to the top favourite on first load (before the selectbox widget is created)
+    if "crafting_tree_recipe" not in st.session_state and favorites:
+        first_fav_name = next(
+            (r["name"] for r in recipe_options if r["id"] == favorites[0]), None
+        )
+        if first_fav_name:
+            st.session_state["crafting_tree_recipe"] = first_fav_name
+
+    # ---- Favourites panel ----
+    fav_header = f"⭐ Favourites ({len(favorites)})" if favorites else "⭐ Favourites"
+    with st.expander(fav_header, expanded=False):
+        if not favorites:
+            st.caption("No favourites yet. Select a recipe below and click **☆ Add to Favourites**.")
+        else:
+            st.caption("The top recipe is loaded by default when you open this tab.")
+            # Resolve favourites to recipe objects (skip IDs that no longer exist)
+            fav_rows = [
+                (fid, next((r for r in recipe_options if r["id"] == fid), None))
+                for fid in favorites
+            ]
+            fav_rows = [(fid, r) for fid, r in fav_rows if r is not None]
+
+            for i, (fid, r) in enumerate(fav_rows):
+                col_pos, col_name, col_load, col_up, col_down, col_remove = st.columns(
+                    [1, 5, 1, 1, 1, 1]
+                )
+                with col_pos:
+                    st.markdown("🥇" if i == 0 else f"**{i + 1}.**")
+                with col_name:
+                    st.write(r["name"])
+                with col_load:
+                    if st.button("▶", key=f"fav_load_{fid}", help="Load this recipe"):
+                        st.session_state["crafting_tree_recipe"] = r["name"]
+                        st.rerun()
+                with col_up:
+                    if i > 0:
+                        if st.button("↑", key=f"fav_up_{fid}", help="Move up"):
+                            favorites.insert(i - 1, favorites.pop(i))
+                            save_favorites(favorites)
+                            st.rerun()
+                with col_down:
+                    if i < len(fav_rows) - 1:
+                        if st.button("↓", key=f"fav_down_{fid}", help="Move down"):
+                            favorites.insert(i + 1, favorites.pop(i))
+                            save_favorites(favorites)
+                            st.rerun()
+                with col_remove:
+                    if st.button("✕", key=f"fav_remove_{fid}", help="Remove from favourites"):
+                        favorites.remove(fid)
+                        save_favorites(favorites)
+                        st.rerun()
+
     selected_label = st.selectbox(
         "Select a recipe",
         recipe_labels,
@@ -348,6 +425,17 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
     root_recipe = recipe_options[selected_idx]
     root_item_id = root_recipe["output_item_id"]
     root_item_info = registry.get_item(root_item_id)
+
+    # Favourite toggle for the currently selected recipe
+    is_fav = root_recipe["id"] in favorites
+    fav_btn_label = "★ Remove from Favourites" if is_fav else "☆ Add to Favourites"
+    if st.button(fav_btn_label, key="crafting_fav_toggle"):
+        if is_fav:
+            favorites.remove(root_recipe["id"])
+        else:
+            favorites.append(root_recipe["id"])
+        save_favorites(favorites)
+        st.rerun()
 
     col_qty, col_info = st.columns([2, 5])
     with col_qty:
