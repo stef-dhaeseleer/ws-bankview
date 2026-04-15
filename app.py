@@ -6,6 +6,7 @@ from ui.dashboard import render_dashboard
 from ui.bank_browser import render_bank_browser
 from ui.tabs_ui import render_tabs
 from ui.filters_ui import render_filters
+from ui.crafting_tree import render_crafting_tree
 
 st.set_page_config(
     page_title="WS BankView",
@@ -50,11 +51,12 @@ if user is None:
         - 🏦 **Bank Browser** — search, sort, and filter all your items
         - 📑 **Bank Tabs** — create custom tabs and manually assign items
         - 🔍 **Bank Filters** — build dynamic rule-based filters
+        - 🌿 **Crafting Tree** — pick a recipe and see the full ingredient tree with owned quantities
         """
     )
 else:
-    tab_dashboard, tab_browser, tab_tabs, tab_filters = st.tabs(
-        ["📊 Dashboard", "🏦 Bank Browser", "📑 Tabs", "🔍 Filters"]
+    tab_dashboard, tab_browser, tab_tabs, tab_filters, tab_crafting = st.tabs(
+        ["📊 Dashboard", "🏦 Bank Browser", "📑 Tabs", "🔍 Filters", "🌿 Crafting Tree"]
     )
 
     with tab_dashboard:
@@ -68,3 +70,6 @@ else:
 
     with tab_filters:
         render_filters(user, registry)
+
+    with tab_crafting:
+        render_crafting_tree(user, registry)
