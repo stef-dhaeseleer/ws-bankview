@@ -11,6 +11,7 @@ def render_tabs(user: UserData, registry: ItemRegistry):
     config = load_config()
     all_items = user.get_enriched_items(registry)
     all_item_ids = sorted(set(i.item_id for i in all_items))
+    all_registry_ids = sorted(registry.get_all_items().keys())
 
     # Create new tab
     with st.expander("➕ Create New Tab", expanded=False):
@@ -45,8 +46,16 @@ def render_tabs(user: UserData, registry: ItemRegistry):
             save_config(config)
             st.rerun()
 
-    # Items in this tab
-    tab_items = [i for i in all_items if i.item_id in tab.item_ids]
+    # Items in this tab (including unowned items shown with qty 0)
+    owned_map = {i.item_id: i for i in all_items}
+    tab_items = []
+    for item_id in tab.item_ids:
+        if item_id in owned_map:
+            tab_items.append(owned_map[item_id])
+        else:
+            info = registry.get_item(item_id)
+            from models import EnrichedItem
+            tab_items.append(EnrichedItem(item_id=item_id, quantity=0, info=info))
     st.caption(f"{len(tab_items)} items in this tab")
 
     if tab_items:
@@ -67,7 +76,7 @@ def render_tabs(user: UserData, registry: ItemRegistry):
 
     # Add items to tab
     st.subheader("Add / Remove Items")
-    available_for_add = [i for i in all_item_ids if i not in tab.item_ids]
+    available_for_add = [i for i in all_registry_ids if i not in tab.item_ids]
 
     with st.form(key=f"add_items_{selected_idx}"):
         selected_to_add = st.multiselect(
