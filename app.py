@@ -1,4 +1,6 @@
+import json
 import streamlit as st
+from streamlit_js_eval import streamlit_js_eval
 from item_registry import ItemRegistry
 from user_data import load_user_data
 from ui.sidebar import render_sidebar
@@ -28,6 +30,37 @@ def get_registry() -> ItemRegistry:
 
 
 registry = get_registry()
+
+# ---------------------------------------------------------------------------
+# localStorage bootstrap — runs once per browser session to restore persisted
+# config and user data after a page refresh.
+# ---------------------------------------------------------------------------
+if not st.session_state.get("ls_loaded"):
+    _ls_raw = streamlit_js_eval(
+        js_expressions="""(() => JSON.stringify({
+            bankview: localStorage.getItem('BANKVIEW_CONFIG'),
+            crafting: localStorage.getItem('CRAFTING_CONFIG'),
+            user_data: localStorage.getItem('BANKVIEW_USER_DATA')
+        }))()""",
+        key="ls_bootstrap",
+    )
+    if _ls_raw:
+        try:
+            _ls = json.loads(_ls_raw)
+            if _ls.get("bankview"):
+                from models import BankViewConfig
+                st.session_state["bankview_config"] = BankViewConfig.model_validate(
+                    json.loads(_ls["bankview"])
+                )
+            if _ls.get("crafting"):
+                st.session_state["crafting_tree_config"] = json.loads(_ls["crafting"])
+            if _ls.get("user_data"):
+                st.session_state["user_data_raw"] = _ls["user_data"]
+                st.session_state["user_data_paste_text"] = _ls["user_data"]
+        except Exception:
+            pass
+        st.session_state["ls_loaded"] = True
+        st.rerun()
 
 # Parse user data if available
 user = None

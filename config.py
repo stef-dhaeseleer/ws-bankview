@@ -1,9 +1,13 @@
 import json
 import os
+import streamlit as st
+from streamlit_js_eval import streamlit_js_eval
 from models import BankViewConfig, BankTab, BankFilter, FilterRule
 from utils.constants import ItemType, Rarity
 
 CONFIG_PATH = "bankview_config.json"
+_SS_KEY = "bankview_config"
+_LS_KEY = "BANKVIEW_CONFIG"
 
 PRESET_FILTERS = [
     BankFilter(
@@ -50,16 +54,24 @@ PRESET_FILTERS = [
 
 
 def load_config() -> BankViewConfig:
-    if not os.path.exists(CONFIG_PATH):
-        return BankViewConfig()
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return BankViewConfig.model_validate(data)
+    if _SS_KEY not in st.session_state:
+        # Local dev: seed from disk if the file exists
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            st.session_state[_SS_KEY] = BankViewConfig.model_validate(data)
+        else:
+            st.session_state[_SS_KEY] = BankViewConfig()
+    return st.session_state[_SS_KEY]
 
 
 def save_config(config: BankViewConfig):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config.model_dump(), f, indent=2, ensure_ascii=False)
+    st.session_state[_SS_KEY] = config
+    payload = json.dumps(json.dumps(config.model_dump(), ensure_ascii=False))
+    streamlit_js_eval(
+        js_expressions=f"localStorage.setItem('{_LS_KEY}', {payload})",
+        key="ls_bankview_config_save",
+    )
 
 
 def get_all_filters(config: BankViewConfig) -> list[BankFilter]:

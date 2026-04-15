@@ -1,4 +1,6 @@
+import json
 import streamlit as st
+from streamlit_js_eval import streamlit_js_eval
 from user_data import UserData
 from item_registry import ItemRegistry
 from utils.constants import RARITY_COLORS
@@ -9,17 +11,50 @@ def render_sidebar(user: UserData | None, registry: ItemRegistry):
         st.title("🏦 WS BankView")
         st.caption("WalkScape Bank Viewer")
 
-        uploaded = st.file_uploader(
-            "Upload character export",
-            type=["json", "txt"],
-            help="Upload your WalkScape character export (JSON/TXT)",
-        )
+        paste_tab, upload_tab = st.tabs(["📋 Paste JSON", "📁 Upload file"])
 
-        if uploaded is not None:
-            content = uploaded.read().decode("utf-8")
-            st.session_state["user_data_raw"] = content
-            if user is None:
+        with paste_tab:
+            pasted = st.text_area(
+                "Paste character export JSON",
+                height=120,
+                placeholder='{"name": "...", "skills": {...}, "bank": {...}, ...}',
+                label_visibility="collapsed",
+                key="user_data_paste_text",
+            )
+            btn_col1, btn_col2 = st.columns([1, 1])
+            if btn_col1.button("Load", key="btn_load_paste", use_container_width=True):
+                try:
+                    json.loads(pasted.lstrip("\ufeff"))  # validate JSON
+                    st.session_state["user_data_raw"] = pasted
+                    streamlit_js_eval(
+                        js_expressions=f"localStorage.setItem('BANKVIEW_USER_DATA', {json.dumps(pasted)})",
+                        key="ls_user_data_save",
+                    )
+                    st.toast("Character data loaded!", icon="✅")
+                    st.rerun()
+                except (json.JSONDecodeError, ValueError):
+                    st.error("Invalid JSON — please paste a valid character export.")
+            if user is not None and btn_col2.button("Clear", key="btn_clear_paste", use_container_width=True):
+                st.session_state.pop("user_data_raw", None)
+                st.session_state["user_data_paste_text"] = ""
                 st.rerun()
+
+        with upload_tab:
+            uploaded = st.file_uploader(
+                "Upload character export",
+                type=["json", "txt"],
+                help="Upload your WalkScape character export (JSON/TXT)",
+                label_visibility="collapsed",
+            )
+            if uploaded is not None:
+                content = uploaded.read().decode("utf-8")
+                st.session_state["user_data_raw"] = content
+                streamlit_js_eval(
+                    js_expressions=f"localStorage.setItem('BANKVIEW_USER_DATA', {json.dumps(content)})",
+                    key="ls_user_data_save",
+                )
+                if user is None:
+                    st.rerun()
 
         if user is None:
             st.info("Upload a character export to get started.")

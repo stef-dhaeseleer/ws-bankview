@@ -95,8 +95,8 @@ def _render_item_table(items: list[EnrichedItem]):
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Qty": st.column_config.NumberColumn(format="%d"),
-            "Unit Value": st.column_config.NumberColumn(format="%d"),
-            "Total Value": st.column_config.NumberColumn(format="%d"),
+            "Qty": st.column_config.NumberColumn(format="localized"),
+            "Unit Value": st.column_config.NumberColumn(format="localized"),
+            "Total Value": st.column_config.NumberColumn(format="localized"),
         },
     )

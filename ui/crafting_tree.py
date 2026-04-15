@@ -4,6 +4,7 @@ import json
 import math
 import os
 import streamlit as st
+from streamlit_js_eval import streamlit_js_eval
 
 from user_data import UserData
 from item_registry import ItemRegistry
@@ -26,20 +27,30 @@ def _owned_qty(item_id: str, user: UserData) -> int:
 # ---------------------------------------------------------------------------
 
 _CRAFTING_CONFIG_PATH = "crafting_tree_config.json"
+_SS_KEY = "crafting_tree_config"
+_LS_KEY = "CRAFTING_CONFIG"
+_EMPTY_CONFIG: dict = {"recipe_yields": {}, "favorites": []}
 
 
 def _load_raw_config() -> dict:
-    """Read the full crafting config dict from disk."""
-    if os.path.exists(_CRAFTING_CONFIG_PATH):
-        with open(_CRAFTING_CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    """Return the crafting config dict from session state, seeding from disk locally."""
+    if _SS_KEY not in st.session_state:
+        if os.path.exists(_CRAFTING_CONFIG_PATH):
+            with open(_CRAFTING_CONFIG_PATH, "r", encoding="utf-8") as f:
+                st.session_state[_SS_KEY] = json.load(f)
+        else:
+            st.session_state[_SS_KEY] = dict(_EMPTY_CONFIG)
+    return st.session_state[_SS_KEY]
 
 
 def _save_raw_config(data: dict) -> None:
-    """Write the full crafting config dict to disk."""
-    with open(_CRAFTING_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    """Write the crafting config dict to session state and persist to localStorage."""
+    st.session_state[_SS_KEY] = data
+    payload = json.dumps(json.dumps(data, ensure_ascii=False))
+    streamlit_js_eval(
+        js_expressions=f"localStorage.setItem('{_LS_KEY}', {payload})",
+        key="ls_crafting_config_save",
+    )
 
 
 def load_crafting_config() -> Dict[str, float]:

@@ -70,7 +70,16 @@ def render_tabs(user: UserData, registry: ItemRegistry):
                 "Type": item.info.item_type.value,
                 "Rarity": item.info.rarity.value,
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Qty": st.column_config.NumberColumn(format="localized"),
+                "Value": st.column_config.NumberColumn(format="localized"),
+                "Total": st.column_config.NumberColumn(format="localized"),
+            },
+        )
 
     st.divider()
 
