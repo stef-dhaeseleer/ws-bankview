@@ -1,6 +1,5 @@
 import json
 import streamlit as st
-from streamlit_js_eval import streamlit_js_eval
 from user_data import UserData
 from item_registry import ItemRegistry
 from utils.constants import RARITY_COLORS
@@ -26,10 +25,7 @@ def render_sidebar(user: UserData | None, registry: ItemRegistry):
                 try:
                     json.loads(pasted.lstrip("\ufeff"))  # validate JSON
                     st.session_state["user_data_raw"] = pasted
-                    streamlit_js_eval(
-                        js_expressions=f"localStorage.setItem('BANKVIEW_USER_DATA', {json.dumps(pasted)})",
-                        key="ls_user_data_save",
-                    )
+                    st.session_state["_save_user_data_to_ls"] = pasted
                     st.toast("Character data loaded!", icon="✅")
                     st.rerun()
                 except (json.JSONDecodeError, ValueError):
@@ -49,10 +45,7 @@ def render_sidebar(user: UserData | None, registry: ItemRegistry):
             if uploaded is not None:
                 content = uploaded.read().decode("utf-8")
                 st.session_state["user_data_raw"] = content
-                streamlit_js_eval(
-                    js_expressions=f"localStorage.setItem('BANKVIEW_USER_DATA', {json.dumps(content)})",
-                    key="ls_user_data_save",
-                )
+                st.session_state["_save_user_data_to_ls"] = content
                 if user is None:
                     st.rerun()
 

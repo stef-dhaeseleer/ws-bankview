@@ -55,8 +55,8 @@ PRESET_FILTERS = [
 
 def load_config() -> BankViewConfig:
     if _SS_KEY not in st.session_state:
-        # Local dev: seed from disk if the file exists
-        if os.path.exists(CONFIG_PATH):
+        # Local dev: seed from disk only before localStorage has been read
+        if not st.session_state.get("ls_loaded") and os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             st.session_state[_SS_KEY] = BankViewConfig.model_validate(data)
@@ -68,9 +68,11 @@ def load_config() -> BankViewConfig:
 def save_config(config: BankViewConfig):
     st.session_state[_SS_KEY] = config
     payload = json.dumps(json.dumps(config.model_dump(), ensure_ascii=False))
+    n = st.session_state.get("_ls_config_save_n", 0) + 1
+    st.session_state["_ls_config_save_n"] = n
     streamlit_js_eval(
         js_expressions=f"localStorage.setItem('{_LS_KEY}', {payload})",
-        key="ls_bankview_config_save",
+        key=f"ls_bankview_config_save_{n}",
     )
 
 

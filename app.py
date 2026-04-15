@@ -62,6 +62,18 @@ if not st.session_state.get("ls_loaded"):
         st.session_state["ls_loaded"] = True
         st.rerun()
 
+# Persist user data to localStorage when flagged by a sidebar action.
+# Runs on the rerun triggered by st.rerun() in the sidebar, so no additional
+# rerun follows and the streamlit_js_eval component can execute its JS cleanly.
+if "_save_user_data_to_ls" in st.session_state:
+    _to_save = st.session_state.pop("_save_user_data_to_ls")
+    _n = st.session_state.get("_ls_user_data_save_n", 0) + 1
+    st.session_state["_ls_user_data_save_n"] = _n
+    streamlit_js_eval(
+        js_expressions=f"localStorage.setItem('BANKVIEW_USER_DATA', {json.dumps(_to_save)})",
+        key=f"ls_user_data_save_{_n}",
+    )
+
 # Parse user data if available
 user = None
 if "user_data_raw" in st.session_state:

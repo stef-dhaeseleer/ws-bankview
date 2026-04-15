@@ -35,7 +35,7 @@ _EMPTY_CONFIG: dict = {"recipe_yields": {}, "favorites": []}
 def _load_raw_config() -> dict:
     """Return the crafting config dict from session state, seeding from disk locally."""
     if _SS_KEY not in st.session_state:
-        if os.path.exists(_CRAFTING_CONFIG_PATH):
+        if not st.session_state.get("ls_loaded") and os.path.exists(_CRAFTING_CONFIG_PATH):
             with open(_CRAFTING_CONFIG_PATH, "r", encoding="utf-8") as f:
                 st.session_state[_SS_KEY] = json.load(f)
         else:
@@ -47,9 +47,11 @@ def _save_raw_config(data: dict) -> None:
     """Write the crafting config dict to session state and persist to localStorage."""
     st.session_state[_SS_KEY] = data
     payload = json.dumps(json.dumps(data, ensure_ascii=False))
+    n = st.session_state.get("_ls_crafting_save_n", 0) + 1
+    st.session_state["_ls_crafting_save_n"] = n
     streamlit_js_eval(
         js_expressions=f"localStorage.setItem('{_LS_KEY}', {payload})",
-        key="ls_crafting_config_save",
+        key=f"ls_crafting_config_save_{n}",
     )
 
 
