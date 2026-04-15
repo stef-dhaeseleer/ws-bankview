@@ -1,5 +1,8 @@
 from __future__ import annotations
 from typing import Dict, List, Optional, Set
+import json
+import math
+import os
 import streamlit as st
 
 from user_data import UserData
@@ -16,6 +19,28 @@ def _owned_qty(item_id: str, user: UserData) -> int:
     for storage in user.get_all_storage().values():
         total += storage.get(item_id.lower(), 0)
     return total
+
+
+# ---------------------------------------------------------------------------
+# Crafting config (per-recipe yield overrides)
+# ---------------------------------------------------------------------------
+
+_CRAFTING_CONFIG_PATH = "crafting_tree_config.json"
+
+
+def load_crafting_config() -> Dict[str, float]:
+    """Return {recipe_id: effective_yield} overrides from disk."""
+    if os.path.exists(_CRAFTING_CONFIG_PATH):
+        with open(_CRAFTING_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {k: float(v) for k, v in data.get("recipe_yields", {}).items()}
+    return {}
+
+
+def save_crafting_config(yield_config: Dict[str, float]) -> None:
+    """Persist per-recipe yield overrides to disk."""
+    with open(_CRAFTING_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump({"recipe_yields": yield_config}, f, indent=2)
 
 
 def _fine_variant(item_id: str, registry: ItemRegistry) -> Optional[str]:
@@ -39,6 +64,7 @@ def _build_tree(
     visited: Optional[Set[str]] = None,
     depth: int = 0,
     use_fine: bool = False,
+    yield_config: Optional[Dict[str, float]] = None,
 ) -> dict:
     """Recursively build a crafting tree node.
 
@@ -83,11 +109,12 @@ def _build_tree(
 
     # materials is a list of slots; each slot is a list of alternatives
     slots: List[List[dict]] = recipe.get("materials", [])
-    output_qty: int = recipe.get("output_quantity", 1)
+    base_yield = float(recipe.get("output_quantity", 1))
+    multiplier = (yield_config or {}).get(recipe["id"], 1.0)
+    effective_yield = base_yield * multiplier
 
     # How many recipe runs do we need?
-    import math
-    runs = math.ceil(needed / output_qty)
+    runs = math.ceil(needed / effective_yield)
 
     children = []
     for slot_idx, alt_group in enumerate(slots):
@@ -119,6 +146,7 @@ def _build_tree(
             visited | {item_id.lower()},
             depth + 1,
             use_fine=use_fine,
+            yield_config=yield_config,
         )
         child_node["is_fine"] = is_fine
         child_node["alt_group"] = alt_group
@@ -179,6 +207,7 @@ def _render_node(
     chosen_recipes: Dict[str, str],
     chosen_alts: Dict[str, int],
     rerun_flag: list,
+    yield_config: Dict[str, float],
 ):
     """Render a single tree node with indentation, then recurse into children."""
     depth = node["depth"]
@@ -193,7 +222,7 @@ def _render_node(
     prefix = "─" * depth
     label = f"{prefix} {node['display_name']}" if depth > 0 else node["display_name"]
 
-    col_label, col_owned, col_needed, col_status = st.columns([5, 1, 1, 1])
+    col_label, col_owned, col_needed, col_status, col_yield = st.columns([4, 1, 1, 2, 2])
     with col_label:
         # Show crafting info when there's a recipe
         recipe = node.get("recipe")
@@ -223,6 +252,27 @@ def _render_node(
             f'<span style="color:{color};font-weight:bold">{icon}</span>',
             unsafe_allow_html=True,
         )
+
+    with col_yield:
+        recipe = node.get("recipe")
+        if recipe:
+            recipe_id = recipe["id"]
+            base_yield = float(recipe.get("output_quantity", 1))
+            current_multiplier = yield_config.get(recipe_id, 1.0)
+            new_multiplier = st.number_input(
+                "Yield multiplier",
+                min_value=0.01,
+                value=current_multiplier,
+                step=0.1,
+                format="%.2f",
+                key=f"yield_{recipe_id}_{depth}",
+                label_visibility="collapsed",
+                help=f"Multiplier on top of base output ({base_yield}x). E.g. 2.00 → {base_yield * 2:.4g}x outputs per craft.",
+            )
+            if abs(new_multiplier - current_multiplier) > 1e-9:
+                yield_config[recipe_id] = new_multiplier
+                save_crafting_config(yield_config)
+                rerun_flag.append(True)
 
     # Alternative selector – only when a slot has more than one option
     if node.get("alt_group") and len(node["alt_group"]) > 1:
@@ -269,7 +319,7 @@ def _render_node(
 
     # Recurse
     for child in node["children"]:
-        _render_node(child, registry, user, chosen_recipes, chosen_alts, rerun_flag)
+        _render_node(child, registry, user, chosen_recipes, chosen_alts, rerun_flag, yield_config)
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +386,8 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
         help="Substitute each ingredient with its fine variant when one exists.",
     )
 
+    yield_config = load_crafting_config()
+
     # Force root recipe for the top-level item
     chosen_recipes[root_item_id.lower()] = root_recipe["id"]
 
@@ -348,10 +400,11 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
         chosen_recipes,
         chosen_alts,
         use_fine=use_fine,
+        yield_config=yield_config,
     )
 
     # ---- Render tree ----
-    col_label_h, col_owned_h, col_needed_h, col_status_h = st.columns([5, 1, 1, 1])
+    col_label_h, col_owned_h, col_needed_h, col_status_h, col_yield_h = st.columns([4, 1, 1, 2, 2])
     with col_label_h:
         st.markdown("**Item**")
     with col_owned_h:
@@ -360,9 +413,11 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
         st.markdown("**Needed**")
     with col_status_h:
         st.markdown("**Status**")
+    with col_yield_h:
+        st.markdown("**Crafts/material**")
 
     rerun_flag: list = []
-    _render_node(tree, registry, user, chosen_recipes, chosen_alts, rerun_flag)
+    _render_node(tree, registry, user, chosen_recipes, chosen_alts, rerun_flag, yield_config)
 
     if rerun_flag:
         st.rerun()
