@@ -18,6 +18,8 @@ def render_sidebar(user: UserData | None, registry: ItemRegistry):
         if uploaded is not None:
             content = uploaded.read().decode("utf-8")
             st.session_state["user_data_raw"] = content
+            if user is None:
+                st.rerun()
 
         if user is None:
             st.info("Upload a character export to get started.")

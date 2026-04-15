@@ -1,0 +1,16 @@
+{
+  "tabs": [
+    {
+      "name": "Tarsilium arrows",
+      "icon": "📦",
+      "item_ids": [
+        "tarsilium_ore_fine",
+        "tarsilium_bar_fine",
+        "coal_fine",
+        "willow_logs_fine",
+        "feather_fine"
+      ]
+    }
+  ],
+  "filters": []
+}
