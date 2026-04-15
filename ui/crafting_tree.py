@@ -18,6 +18,17 @@ def _owned_qty(item_id: str, user: UserData) -> int:
     return total
 
 
+def _fine_variant(item_id: str, registry: ItemRegistry) -> Optional[str]:
+    """Return the fine variant item_id if it exists in the registry, else None."""
+    candidate = item_id.lower() + "_fine"
+    info = registry.get_item(candidate)
+    # get_item returns an inferred stub for unknown items; check it was actually registered
+    from utils.constants import ItemType
+    if info.item_type != ItemType.UNKNOWN:
+        return candidate
+    return None
+
+
 def _build_tree(
     item_id: str,
     needed: int,
@@ -27,6 +38,7 @@ def _build_tree(
     chosen_alts: Dict[str, int],       # "<recipe_id>:<slot_idx>" -> alt_idx
     visited: Optional[Set[str]] = None,
     depth: int = 0,
+    use_fine: bool = False,
 ) -> dict:
     """Recursively build a crafting tree node.
 
@@ -34,7 +46,7 @@ def _build_tree(
         item_id, display_name, needed, owned, depth,
         recipe (or None if raw material),
         children (list of tree nodes),
-        alternatives (list of lists of {item_id, amount} for each slot)
+        is_fine (bool – True when this node is a fine-substituted ingredient)
     """
     if visited is None:
         visited = set()
@@ -49,18 +61,23 @@ def _build_tree(
         "depth": depth,
         "recipe": None,
         "children": [],
+        "is_fine": False,
     }
 
     # Avoid infinite recursion on cyclic recipes
     if item_id.lower() in visited:
         return node
 
-    recipes = registry.get_recipes_for_item(item_id)
+    # Fine items share the same recipe as their base counterpart; strip suffix for lookup
+    recipe_lookup_id = item_id[:-5] if item_id.lower().endswith("_fine") else item_id
+    recipes = registry.get_recipes_for_item(recipe_lookup_id)
     if not recipes:
         return node
 
     # Pick which recipe the user selected (default: first)
-    selected_recipe_id = chosen_recipes.get(item_id.lower(), recipes[0]["id"])
+    # Use the base item key for chosen_recipes (fine variants share the base recipe)
+    recipe_key = recipe_lookup_id.lower()
+    selected_recipe_id = chosen_recipes.get(recipe_key, recipes[0]["id"])
     recipe = next((r for r in recipes if r["id"] == selected_recipe_id), recipes[0])
     node["recipe"] = recipe
 
@@ -84,6 +101,14 @@ def _build_tree(
         child_id = chosen_ingredient["item_id"]
         child_amount = chosen_ingredient["amount"] * runs
 
+        # Fine substitution: replace with fine variant when available
+        is_fine = False
+        if use_fine:
+            fine_id = _fine_variant(child_id, registry)
+            if fine_id is not None:
+                child_id = fine_id
+                is_fine = True
+
         child_node = _build_tree(
             child_id,
             child_amount,
@@ -93,7 +118,9 @@ def _build_tree(
             chosen_alts,
             visited | {item_id.lower()},
             depth + 1,
+            use_fine=use_fine,
         )
+        child_node["is_fine"] = is_fine
         child_node["alt_group"] = alt_group
         child_node["alt_idx"] = alt_idx
         child_node["slot_idx"] = slot_idx
@@ -171,19 +198,18 @@ def _render_node(
         # Show crafting info when there's a recipe
         recipe = node.get("recipe")
         if recipe:
-            skill = recipe.get("skill", "").title()
-            level = recipe.get("level", "?")
             out_qty = recipe.get("output_quantity", 1)
-            suffix = f"  _(craft {out_qty}x · {skill} lv.{level})_"
+            suffix = f"  (craft {out_qty}x)  "
         else:
             suffix = ""
+        fine_badge = " ✨" if node.get("is_fine") else ""
         if indent_px > 0:
             st.markdown(
-                f'<div style="padding-left:{indent_px}px">{label}{suffix}</div>',
+                f'<div style="padding-left:{indent_px}px">{label}{fine_badge}{suffix}</div>',
                 unsafe_allow_html=True,
             )
         else:
-            st.markdown(f"**{label}**{suffix}")
+            st.markdown(f"**{label}**{fine_badge}{suffix}")
 
     with col_owned:
         st.write(owned)
@@ -221,9 +247,11 @@ def _render_node(
 
     # Recipe selector – only when multiple recipes produce this item
     if node.get("recipe"):
-        all_recipes = registry.get_recipes_for_item(item_id)
+        recipe_lookup_id = item_id[:-5] if item_id.lower().endswith("_fine") else item_id
+        recipe_key = recipe_lookup_id.lower()
+        all_recipes = registry.get_recipes_for_item(recipe_lookup_id)
         if len(all_recipes) > 1:
-            current_rid = chosen_recipes.get(item_id.lower(), all_recipes[0]["id"])
+            current_rid = chosen_recipes.get(recipe_key, all_recipes[0]["id"])
             recipe_labels = [r["name"] for r in all_recipes]
             recipe_ids = [r["id"] for r in all_recipes]
             current_ridx = recipe_ids.index(current_rid) if current_rid in recipe_ids else 0
@@ -236,7 +264,7 @@ def _render_node(
                 label_visibility="collapsed",
             )
             if choice_r != current_ridx:
-                chosen_recipes[item_id.lower()] = recipe_ids[choice_r]
+                chosen_recipes[recipe_key] = recipe_ids[choice_r]
                 rerun_flag.append(True)
 
     # Recurse
@@ -301,6 +329,13 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
     chosen_recipes: Dict[str, str] = st.session_state.crafting_chosen_recipes
     chosen_alts: Dict[str, int] = st.session_state.crafting_chosen_alts
 
+    use_fine: bool = st.toggle(
+        "✨ Use fine materials",
+        value=False,
+        key="crafting_use_fine",
+        help="Substitute each ingredient with its fine variant when one exists.",
+    )
+
     # Force root recipe for the top-level item
     chosen_recipes[root_item_id.lower()] = root_recipe["id"]
 
@@ -312,6 +347,7 @@ def render_crafting_tree(user: UserData, registry: ItemRegistry):
         user,
         chosen_recipes,
         chosen_alts,
+        use_fine=use_fine,
     )
 
     # ---- Render tree ----
